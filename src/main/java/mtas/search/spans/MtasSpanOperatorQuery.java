@@ -28,7 +28,7 @@ import org.apache.lucene.util.automaton.Operations;
  * The Class MtasSpanComparatorQuery.
  */
 public class MtasSpanOperatorQuery extends MtasSpanQuery {
-
+    
 	/** The field. */
 	private String field;
 
@@ -67,6 +67,8 @@ public class MtasSpanOperatorQuery extends MtasSpanQuery {
 
 	/** The Constant MTAS_OPERATOR_MORE_THAN_OR_EQUAL. */
 	public static final String MTAS_OPERATOR_MORE_THAN_OR_EQUAL = ">=";
+        
+        private static final int MIN_NEGATIVE = -100;
 
 	/**
 	 * Instantiates a new mtas span comparator query.
@@ -79,19 +81,19 @@ public class MtasSpanOperatorQuery extends MtasSpanQuery {
 	 */
 	public MtasSpanOperatorQuery(String field, String prefix, String operator, int value, boolean singlePosition) {
 		super(singlePosition ? 1 : null, singlePosition ? 1 : null);
-		this.field = field;
-		this.prefix = prefix;
-		this.operator = operator;
-		this.singlePosition = singlePosition;
-		this.ivalue = value;
-		this.svalue = Integer.toString(value);
-		Term term = new Term(field, prefix + MtasToken.DELIMITER + Integer.toString(value));
-		Automaton a = toAutomaton(operator, prefix, value);
-		AutomatonQuery auq = new AutomatonQuery(term, a);
+                this.field = field;
+                this.prefix = prefix;
+                this.operator = operator;
+                this.singlePosition = singlePosition;
+                this.ivalue = value;
+                this.svalue = Integer.toString(value);
+                Term term = new Term(field, prefix + MtasToken.DELIMITER + Integer.toString(value));
+                Automaton a = toAutomaton(operator, prefix, value);
+                AutomatonQuery auq = new AutomatonQuery(term, a);
 		// RegexpQuery req = new RegexpQuery(term);
-		query = new SpanMultiTermQueryWrapper<>(auq);
+                query = new SpanMultiTermQueryWrapper<>(auq);
 	}
-
+        
 	/**
 	 * Instantiates a new mtas span operator query.
 	 *
@@ -214,7 +216,7 @@ public class MtasSpanOperatorQuery extends MtasSpanQuery {
 		return buffer.toString();
 	}
 
-	/**
+        	/**
 	 * To automaton.
 	 *
 	 * @param operator the operator
@@ -222,30 +224,122 @@ public class MtasSpanOperatorQuery extends MtasSpanQuery {
 	 * @param value    the value
 	 * @return the automaton
 	 */
-	private static Automaton toAutomaton(String operator, String prefix, int value) {
-		List<Automaton> automata = new ArrayList<>();
-		automata.add(Automata.makeBinary(new BytesRef(prefix + MtasToken.DELIMITER)));
-		if (operator.equals(MTAS_OPERATOR_EQUAL)) {
-			automata.add(Automata.makeString(Integer.toString(value)));
-		} else if (operator.equals(MTAS_OPERATOR_LESS_THAN)) {
+    /*    private static Automaton toAutomaton(String operator, String prefix, int value) {
+            List<Automaton> automata = new ArrayList<>();
+            automata.add(Automata.makeBinary(new BytesRef(prefix + MtasToken.DELIMITER)));
+            if (operator.equals(MTAS_OPERATOR_EQUAL)) {
+                automata.add(Automata.makeString(Integer.toString(value)));
+            } else if (operator.equals(MTAS_OPERATOR_LESS_THAN)) {
 			automata.add(Automata.makeDecimalInterval(0, value - 1, 0));
-		} else if (operator.equals(MTAS_OPERATOR_LESS_THAN_OR_EQUAL)) {
+            } else if (operator.equals(MTAS_OPERATOR_LESS_THAN_OR_EQUAL)) {
 			automata.add(Automata.makeDecimalInterval(0, value, 0));
-		} else if (operator.equals(MTAS_OPERATOR_MORE_THAN)) {
-			int min = value + 1;
+            } else if (operator.equals(MTAS_OPERATOR_MORE_THAN)) {
+		int min = value + 1;
 			int max = ((int) Math.pow(10, Integer.toString(value + 1).length())) - 1;
-			automata.add(Automata.makeDecimalInterval(min, max, 0));
-			automata.add(Operations.repeat(Automata.makeDecimalInterval(0, 9, 0)));
-		} else if (operator.equals(MTAS_OPERATOR_MORE_THAN_OR_EQUAL)) {
-			int min = value;
+                    automata.add(Automata.makeDecimalInterval(min, max, 0));
+                    automata.add(Operations.repeat(Automata.makeDecimalInterval(0, 9, 0)));
+            } else if (operator.equals(MTAS_OPERATOR_MORE_THAN_OR_EQUAL)) {
+                int min = value;
 			int max = ((int) Math.pow(10, Integer.toString(value).length())) - 1;
-			automata.add(Automata.makeDecimalInterval(min, max, 0));
-			automata.add(Operations.repeat(Automata.makeDecimalInterval(0, 9, 0)));
-		}
-		automata.add(Operations.repeat(Automata.makeBinary(new BytesRef("\u0000"))));
-		return Operations.concatenate(automata);
+                    automata.add(Automata.makeDecimalInterval(min, max, 0));
+                    automata.add(Operations.repeat(Automata.makeDecimalInterval(0, 9, 0)));
+                }                 
+            automata.add(Operations.repeat(Automata.makeBinary(new BytesRef("\u0000"))));
+            return Operations.concatenate(automata);
 	}
+    */
 
+    private static Automaton toAutomaton(String operator, String prefix, int value) {
+
+        List<Automaton> automata = new ArrayList<>();
+        automata.add(Automata.makeBinary(new BytesRef(prefix + MtasToken.DELIMITER)));
+
+        switch (operator) {
+
+            case MTAS_OPERATOR_EQUAL -> {
+                automata.add(Automata.makeString(Integer.toString(value)));
+            }
+
+            case MTAS_OPERATOR_LESS_THAN -> {
+                addLessThan(automata, value, false);
+            }
+
+            case MTAS_OPERATOR_LESS_THAN_OR_EQUAL -> {
+                addLessThan(automata, value, true);
+            }
+
+            case MTAS_OPERATOR_MORE_THAN -> {
+                addGreaterThan(automata, value, false);
+            }
+
+            case MTAS_OPERATOR_MORE_THAN_OR_EQUAL -> {
+                addGreaterThan(automata, value, true);
+            }
+
+            default -> throw new IllegalArgumentException("Unknown operator: " + operator);
+        }
+
+        automata.add(Operations.repeat(
+            Automata.makeBinary(new BytesRef("\u0000"))
+        ));
+
+        return Operations.concatenate(automata);
+    }
+    
+    private static void addLessThan(List<Automaton> automata,
+                                    int value,
+                                    boolean inclusive) {
+        
+        int max = inclusive ? value : value - 1;
+
+        if (value > 0) {
+            automata.add(Automata.makeDecimalInterval(0, max, 0));
+        } else {
+            validateNegativeBound(value);
+            automata.add(negativeRange(MIN_NEGATIVE, max));
+        }
+    }
+    
+    private static void addGreaterThan(List<Automaton> automata,
+                                       int value,
+                                       boolean inclusive) {
+        
+        int min = inclusive ? value : value + 1;
+
+        if (value < 0) {
+            validateNegativeBound(value);
+            automata.add(negativeRange(min, -1));
+        } else {
+            int max = maxDigits(min);
+            automata.add(Automata.makeDecimalInterval(min, max, 0));
+            automata.add(Operations.repeat(Automata.makeDecimalInterval(0, 9, 0)));
+        }
+    }
+    
+    private static void validateNegativeBound(int value) {
+        if (value <= MIN_NEGATIVE) {
+            throw new IllegalArgumentException(
+                "Values less than " + MIN_NEGATIVE 
+                        + " are not accepted for performance reasons"
+            );
+        }
+    }
+
+    private static int maxDigits(int value) {
+        int digits = Integer.toString(Math.abs(value)).length();
+        return (int) Math.pow(10, digits) - 1;
+    }
+    
+    private static Automaton negativeRange(int min, int max) {
+
+        List<Automaton> parts = new ArrayList<>();
+
+        for (int i = min; i <= max; i++) {
+            parts.add(Automata.makeString(Integer.toString(i)));
+        }
+        return Operations.union(parts);
+    }
+        
 	/**
 	 * To automaton.
 	 *
